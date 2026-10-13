@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!-- 모바일 환경에서도 잘 보이도록 뷰포트 설정 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>점심 메뉴 룰렛</title>
+    <!-- Noto Sans KR 글꼴 (jsDelivr CDN) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5/400.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5/700.css">
+    <style>
+        /* ===== 공통 색상 변수 ===== */
+        /* 눈이 편한 따뜻한 오트밀 베이지 바탕 + 남색 포인트 */
+        :root {
+            --bg: #f3efe6;              /* 페이지 바탕 (오트밀 베이지) */
+            --card: #fbf9f4;            /* 카드 바탕 (아이보리) */
+            --surface: #f2ede3;         /* 목록·보조 버튼 바탕 */
+            --surface-hover: #e8e1d3;   /* 보조 버튼 hover */
+            --input-bg: #fffdf9;        /* 입력창 바탕 */
+            --navy: #1f3a6d;            /* 포인트 남색 */
+            --navy-dark: #152a52;       /* 눌림/hover용 진한 남색 */
+            --navy-soft: #e2e5ec;       /* 연한 남색 배경 (베이지와 어울리게 살짝 회색빛) */
+            --navy-soft-hover: #d2d8e3; /* 연한 남색 hover */
+            --chip-border: #c9d0dc;     /* 기록 칩 테두리 */
+            --border: #e3dccf;          /* 테두리 (따뜻한 베이지) */
+            --text: #2e2b27;            /* 본문 글자 (따뜻한 진회색) */
+            --muted: #7a7266;           /* 보조 글자 */
+            --danger: #b4532a;          /* 안내 메시지 (차분한 테라코타) */
+            --shadow: rgba(80, 64, 40, 0.08); /* 그림자 (따뜻한 갈색빛) */
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        button { font-family: inherit; cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+        /* 숨김 처리용 공통 클래스 */
+        .hidden { display: none !important; }
+
+        /* ===== 상단 바 (도구 모음 링크) ===== */
+        .topbar {
+            width: 100%;
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 16px 16px 0;
+        }
+        .back-link {
+            display: inline-block;
+            color: var(--navy);
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 999px;
+            transition: background 0.2s;
+        }
+        .back-link:hover { background: var(--navy-soft); }
+
+        /* ===== 머리말 ===== */
+        header {
+            text-align: center;
+            padding: 20px 16px 28px;
+        }
+        header h1 {
+            margin: 0;
+            font-size: clamp(28px, 6vw, 42px);
+            font-weight: 700;
+            color: var(--navy);
+        }
+        header p {
+            margin: 8px 0 0;
+            font-size: 17px;
+            color: var(--muted);
+        }
+
+        /* ===== 본문 레이아웃 ===== */
+        main {
+            width: 100%;
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 0 16px;
+            flex-grow: 1;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+        }
+        @media (min-width: 900px) {
+            main { grid-template-columns: 1fr 1fr; }
+        }
+
+        /* 둥근 카드 */
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: 0 6px 20px var(--shadow);
+            padding: 24px;
+        }
+
+        /* ===== 메뉴 입력 카드 ===== */
+        .input-card {
+            display: flex;
+            flex-direction: column;
+            min-height: 420px;
+        }
+        .card-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 0 0 16px;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .count {
+            font-size: 15px;
+            font-weight: 400;
+            color: var(--navy);
+            background: var(--navy-soft);
+            padding: 4px 12px;
+            border-radius: 999px;
+        }
+        .input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        #menuInput {
+            flex: 1;
+            min-width: 0;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 16px;
+            font-family: inherit;
+            color: var(--text);
+            background: var(--input-bg);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #menuInput:focus { border-color: var(--navy); }
+        #menuInput:disabled { background: var(--surface); }
+
+        .btn-primary {
+            background: var(--navy);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 700;
+            white-space: nowrap;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn-primary:hover:not(:disabled) { background: var(--navy-dark); }
+        .btn-primary:active:not(:disabled) { transform: scale(0.97); }
+
+        #messageArea {
+            height: 22px;
+            font-size: 14px;
+            color: var(--danger);
+            margin-bottom: 12px;
+        }
+
+        .menu-list-wrap {
+            flex-grow: 1;
+            overflow-y: auto;
+            max-height: 360px;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 0;
+            margin-bottom: 16px;
+        }
+        #menuList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .menu-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 16px;
+        }
+        .menu-item .dot {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        .btn-delete {
+            background: var(--navy-soft);
+            color: var(--navy);
+            border: none;
+            border-radius: 8px;
+            padding: 5px 12px;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+        .btn-delete:hover:not(:disabled) { background: var(--navy-soft-hover); }
+
+        .btn-secondary {
+            width: 100%;
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        .btn-secondary:hover:not(:disabled) { background: var(--surface-hover); }
+
+        /* ===== 룰렛 카드 ===== */
+        .roulette-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .wheel-wrap {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        /* 화살표 (▼) */
+        .pointer {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            color: var(--navy);
+            font-size: 44px;
+            line-height: 1;
+            filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.25));
+        }
+        /* 캔버스가 CSS 크기에 맞춰 비율을 유지하도록 설정 */
+        #rouletteCanvas {
+            width: 100%;
+            height: auto;
+            max-width: 400px;
+            aspect-ratio: 1 / 1;
+            border-radius: 50%;
+            border: 4px solid var(--navy);
+            box-shadow: 0 8px 24px rgba(80, 64, 40, 0.15);
+        }
+
+        /* 룰렛 위 카운트다운 숫자 */
+        #countdownDisplay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 96px;
+            font-weight: 700;
+            color: #ffffff;
+            pointer-events: none;
+        }
+        .countdown-text {
+            text-shadow: 0 0 6px rgba(31, 58, 109, 0.9), 2px 2px 10px rgba(0, 0, 0, 0.5);
+            animation: popIn 1s infinite;
+        }
+        @keyframes popIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            30% { transform: scale(1.2); opacity: 1; }
+            50% { transform: scale(1); opacity: 1; }
+            80% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.8); opacity: 0; }
+        }
+
+        #startBtn {
+            margin-top: 28px;
+            width: 100%;
+            max-width: 400px;
+            background: var(--navy);
+            color: #ffffff;
+            font-size: 22px;
+            font-weight: 700;
+            padding: 16px;
+            border: none;
+            border-radius: 999px;
+            box-shadow: 0 6px 0 var(--navy-dark);
+            transition: transform 0.1s, box-shadow 0.1s, background 0.2s;
+        }
+        #startBtn:active:not(:disabled) {
+            transform: translateY(6px);
+            box-shadow: 0 0 0 var(--navy-dark);
+        }
+        #startBtn:disabled { box-shadow: none; }
+
+        /* ===== 최근 결과 ===== */
+        .history-section {
+            width: 100%;
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 24px 16px 8px;
+        }
+        .history-section h3 {
+            margin: 0 0 14px;
+            text-align: center;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        #historyList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            font-size: 15px;
+        }
+        .history-empty { color: var(--muted); }
+        .history-chip {
+            background: var(--navy-soft);
+            border: 1px solid var(--chip-border);
+            color: var(--navy);
+            padding: 6px 14px;
+            border-radius: 999px;
+        }
+
+        /* ===== 맨 아래 안내 문구 ===== */
+        .privacy-note {
+            text-align: center;
+            font-size: 12px;
+            color: var(--muted);
+            padding: 20px 16px 24px;
+        }
+
+        /* ===== 꽃가루 캔버스 (클릭 무시) ===== */
+        #confettiCanvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        /* ===== 결과 모달 ===== */
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(46, 38, 28, 0.45); /* 따뜻한 톤의 반투명 배경 */
+            backdrop-filter: blur(3px);
+            z-index: 50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s;
+        }
+        .modal.faded { opacity: 0; }
+        .modal-box {
+            background: var(--card);
+            padding: 36px 28px;
+            border-radius: 24px;
+            text-align: center;
+            width: 90%;
+            max-width: 420px;
+            border: 3px solid var(--navy);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+            transition: transform 0.3s;
+        }
+        .modal-box.small { transform: scale(0.9); }
+        .modal-box h3 {
+            margin: 0 0 8px;
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--muted);
+        }
+        #resultMenuName {
+            margin: 0 0 28px;
+            font-size: clamp(32px, 9vw, 44px);
+            font-weight: 700;
+            color: var(--navy);
+            word-break: keep-all;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+        }
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            font-size: 17px;
+            border-radius: 12px;
+            border: none;
+            transition: background 0.2s;
+        }
+        #retryBtn { background: var(--navy-soft); color: var(--navy); }
+        #retryBtn:hover { background: var(--navy-soft-hover); }
+        #closeModalBtn { background: var(--navy); color: #ffffff; }
+        #closeModalBtn:hover { background: var(--navy-dark); }
+
+        /* 스크롤바 꾸미기 */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--surface); }
+        ::-webkit-scrollbar-thumb { background: #d3c9b8; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #b8ab95; }
+
+        /* 휴대폰 화면 보정 */
+        @media (max-width: 480px) {
+            .card { padding: 18px; }
+            .input-card { min-height: auto; }
+            #countdownDisplay { font-size: 72px; }
+            #startBtn { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 상단: 업무 도구 모음으로 돌아가기 -->
+    <nav class="topbar">
+        <a href="index.html" class="back-link">← 업무 도구 모음</a>
+    </nav>
+
+    <header>
+        <h1>오늘 점심 뭐 먹지?</h1>
+        <p>두근두근 룰렛으로 정해보세요!</p>
+    </header>
+
+    <main>
+        <!-- 메뉴 입력 카드 -->
+        <section class="card input-card">
+            <h2 class="card-title">
+                <span>메뉴 입력</span>
+                <span id="menuCountDisplay" class="count">현재 5 / 10개</span>
+            </h2>
+
+            <div class="input-row">
+                <input type="text" id="menuInput"
+                    placeholder="메뉴를 입력하세요 (예: 제육볶음)"
+                    maxlength="15">
+                <button id="addBtn" class="btn-primary">추가</button>
+            </div>
+
+            <!-- 안내 메시지 영역 -->
+            <div id="messageArea"></div>
+
+            <div class="menu-list-wrap">
+                <ul id="menuList">
+                    <!-- 메뉴 리스트가 여기에 동적으로 추가됩니다 -->
+                </ul>
+            </div>
+
+            <button id="clearAllBtn" class="btn-secondary">전체 삭제</button>
+        </section>
+
+        <!-- 룰렛 카드 -->
+        <section class="card roulette-card">
+            <!-- 룰렛 컨테이너 (화살표 포함) -->
+            <div class="wheel-wrap">
+                <!-- 화살표 (▼) -->
+                <div class="pointer">▼</div>
+
+                <!-- 캔버스 (크기는 600x600으로 선명하게 잡고 CSS로 리사이즈) -->
+                <canvas id="rouletteCanvas" width="600" height="600"></canvas>
+
+                <!-- 카운트다운 오버레이 -->
+                <div id="countdownDisplay" class="countdown-text hidden">5</div>
+            </div>
+
+            <button id="startBtn">룰렛 시작!</button>
+        </section>
+    </main>
+
+    <!-- 최근 결과 -->
+    <section class="history-section">
+        <div class="card">
+            <h3>최근 결과</h3>
+            <ul id="historyList">
+                <li class="history-empty">아직 돌린 기록이 없어요.</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- 맨 아래 안내 문구 -->
+    <footer class="privacy-note">
+        입력한 내용은 이 브라우저 안에서만 처리되며 어디에도 저장·전송되지 않습니다.
+    </footer>
+
+    <!-- 꽃가루 캔버스 (클릭 무시) -->
+    <canvas id="confettiCanvas" class="hidden"></canvas>
+
+    <!-- 결과 모달 -->
+    <div id="resultModal" class="modal hidden faded">
+        <div class="modal-box small">
+            <h3>오늘 점심은</h3>
+            <p id="resultMenuName">짜장면!</p>
+            <div class="modal-buttons">
+                <button id="retryBtn">다시 돌리기</button>
+                <button id="closeModalBtn">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ===== 상태 변수 =====
+        // 모든 데이터는 메모리(변수)에만 보관하며, 서버 전송이나 localStorage 저장은 하지 않습니다.
+        let menus = ['김치찌개', '돈가스', '비빔밥', '짜장면', '냉면'];
+        let history = []; // { time: '12:03', menu: '김치찌개' }
+        let isSpinning = false;
+        let currentAngle = 0; // 룰렛의 현재 회전 각도
+
+        // 룰렛 글꼴 (화면 글꼴과 동일)
+        const WHEEL_FONT = "'Noto Sans KR', sans-serif";
+
+        // 룰렛 색상 팔레트 (베이지 바탕과 어울리는 차분한 자연색 10색)
+        const colors = [
+            '#C8D3E6', '#EED9B6', '#CFDCC8', '#EBC9BC', '#D9D1E6',
+            '#BFD8D6', '#F0E2BE', '#D8D2C6', '#E6CFD6', '#C9D9C0'
+        ];
+
+        // 룰렛에서 쓰는 바탕 색 (카드 색과 동일하게 맞춤)
+        const WHEEL_BG = '#fbf9f4';
+
+        // ===== DOM 요소 =====
+        const menuInput = document.getElementById('menuInput');
+        const addBtn = document.getElementById('addBtn');
+        const menuList = document.getElementById('menuList');
+        const menuCountDisplay = document.getElementById('menuCountDisplay');
+        const messageArea = document.getElementById('messageArea');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const startBtn = document.getElementById('startBtn');
+
+        const canvas = document.getElementById('rouletteCanvas');
+        const ctx = canvas.getContext('2d');
+        const countdownDisplay = document.getElementById('countdownDisplay');
+
+        const historyList = document.getElementById('historyList');
+
+        const resultModal = document.getElementById('resultModal');
+        const resultModalBox = resultModal.querySelector('.modal-box');
+        const resultMenuName = document.getElementById('resultMenuName');
+        const retryBtn = document.getElementById('retryBtn');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        const confettiCanvas = document.getElementById('confettiCanvas');
+        const confettiCtx = confettiCanvas.getContext('2d');
+
+
+        // ===== 메시지 표시 함수 =====
+        function showMessage(msg) {
+            messageArea.textContent = msg;
+            // 3초 후 메시지 삭제
+            clearTimeout(window.messageTimeout);
+            window.messageTimeout = setTimeout(() => {
+                messageArea.textContent = '';
+            }, 3000);
+        }
+
+        // ===== UI 업데이트 (리스트, 버튼 상태, 캔버스 등) =====
+        function updateUI() {
+            // 개수 표시
+            menuCountDisplay.textContent = `현재 ${menus.length} / 10개`;
+
+            // 입력창 및 추가 버튼 상태
+            if (menus.length >= 10) {
+                menuInput.disabled = true;
+                addBtn.disabled = true;
+            } else if (!isSpinning) {
+                menuInput.disabled = false;
+                addBtn.disabled = false;
+            }
+
+            // 시작 버튼 및 전체 삭제 버튼 상태
+            if (isSpinning) {
+                startBtn.disabled = true;
+                clearAllBtn.disabled = true;
+                menuInput.disabled = true;
+                addBtn.disabled = true;
+            } else {
+                startBtn.disabled = menus.length < 2;
+                clearAllBtn.disabled = menus.length === 0;
+            }
+
+            // 리스트 렌더링
+            menuList.innerHTML = '';
+            menus.forEach((menu, index) => {
+                const li = document.createElement('li');
+                li.className = 'menu-item';
+
+                // 룰렛 조각 색상과 같은 점 + 메뉴 이름
+                const span = document.createElement('span');
+                const dot = document.createElement('span');
+                dot.className = 'dot';
+                dot.style.background = colors[index % colors.length];
+                span.appendChild(dot);
+                span.appendChild(document.createTextNode(menu));
+
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '삭제';
+                delBtn.className = 'btn-delete';
+                delBtn.disabled = isSpinning; // 도는 중에는 삭제 불가
+                delBtn.onclick = () => deleteMenu(index);
+
+                li.appendChild(span);
+                li.appendChild(delBtn);
+                menuList.appendChild(li);
+            });
+
+            // 룰렛 다시 그리기
+            drawRoulette();
+        }
+
+        // ===== 메뉴 추가 =====
+        function addMenu() {
+            const newMenu = menuInput.value.trim();
+
+            if (menus.length >= 10) {
+                showMessage('메뉴는 최대 10개까지 입력할 수 있어요');
+                return;
+            }
+            if (newMenu === '') {
+                return; // 빈 칸은 그냥 무시
+            }
+            if (menus.includes(newMenu)) {
+                showMessage('이미 있는 메뉴예요');
+                return;
+            }
+
+            menus.push(newMenu);
+            menuInput.value = '';
+            menuInput.focus();
+            updateUI();
+        }
+
+        // ===== 메뉴 삭제 =====
+        function deleteMenu(index) {
+            if (isSpinning) return;
+            menus.splice(index, 1);
+            updateUI();
+        }
+
+        // ===== 전체 삭제 =====
+        function clearAll() {
+            if (isSpinning) return;
+            menus = [];
+            updateUI();
+        }
+
+        // 이벤트 리스너: 입력 및 버튼
+        addBtn.addEventListener('click', addMenu);
+        menuInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addMenu();
+        });
+        clearAllBtn.addEventListener('click', clearAll);
+
+
+        // ===== 룰렛 그리기 =====
+        function drawRoulette() {
+            const width = canvas.width;
+            const height = canvas.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius = Math.min(centerX, centerY) - 10; // 여백 10
+
+            // 캔버스 초기화
+            ctx.clearRect(0, 0, width, height);
+
+            if (menus.length === 0) {
+                // 메뉴가 없을 때 빈 원 그리기
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#f2ede3';
+                ctx.fill();
+                ctx.strokeStyle = '#e3dccf';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#9a9184';
+                ctx.font = `30px ${WHEEL_FONT}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('메뉴를 추가해주세요', centerX, centerY);
+                return;
+            }
+
+            const sliceAngle = (2 * Math.PI) / menus.length;
+
+            for (let i = 0; i < menus.length; i++) {
+                const startAngle = currentAngle + i * sliceAngle;
+                const endAngle = startAngle + sliceAngle;
+
+                // 조각 그리기
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+                ctx.closePath();
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fill();
+                ctx.strokeStyle = WHEEL_BG; // 조각 사이 구분선
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // 텍스트 그리기
+                ctx.save();
+                ctx.translate(centerX, centerY);
+                // 텍스트를 각 조각의 중간 각도로 회전
+                const textAngle = startAngle + sliceAngle / 2;
+                ctx.rotate(textAngle);
+
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#1f3a6d'; // 남색 글자
+
+                // 메뉴 개수에 따라 폰트 크기 조절
+                const fontSize = menus.length > 7 ? 26 : 32;
+                ctx.font = `700 ${fontSize}px ${WHEEL_FONT}`;
+
+                // 텍스트를 바깥쪽으로 위치시킴 (반지름의 85% 위치)
+                ctx.fillText(menus[i], radius * 0.85, 0);
+                ctx.restore();
+            }
+
+            // 중앙 핀 그리기
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 20, 0, 2 * Math.PI);
+            ctx.fillStyle = WHEEL_BG;
+            ctx.fill();
+            ctx.strokeStyle = '#1f3a6d';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+        }
+
+
+        // ===== 감속 함수 (Cubic Ease Out) =====
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 3);
+        }
+
+        // ===== 룰렛 시작 =====
+        function startRoulette() {
+            if (menus.length < 2) {
+                showMessage('메뉴를 2개 이상 입력해 주세요');
+                return;
+            }
+            if (isSpinning) return;
+
+            isSpinning = true;
+            updateUI(); // 버튼들 비활성화
+
+            // 1. 당첨 메뉴 무작위로 먼저 정하기
+            const winnerIdx = Math.floor(Math.random() * menus.length);
+            const winnerMenu = menus[winnerIdx];
+
+            // 2. 멈췄을 때 각도 계산
+            // 화살표는 12시 방향(1.5π)에 있고, 그리기 기준 각도는 3시 방향(0)입니다.
+            // i번째 조각의 중심 각도 = currentAngle + i*sliceAngle + sliceAngle/2
+            // 이 중심 각도가 1.5π에 오도록 최종 각도를 구합니다.
+            const sliceAngle = (2 * Math.PI) / menus.length;
+            let targetBaseAngle = (1.5 * Math.PI) - (winnerIdx * sliceAngle) - (sliceAngle / 2);
+
+            // 항상 양수로 맞추기
+            while (targetBaseAngle < 0) targetBaseAngle += 2 * Math.PI;
+
+            // 현재 각도에서 최소 회전량 찾기
+            let currentMod = currentAngle % (2 * Math.PI);
+            let angleDiff = targetBaseAngle - currentMod;
+            if (angleDiff < 0) angleDiff += 2 * Math.PI;
+
+            // 5초 동안 돌기 위해 추가 회전수 설정 (10바퀴)
+            const extraSpins = 10 * 2 * Math.PI;
+            const finalAngle = currentAngle + angleDiff + extraSpins;
+
+            const startAngleRaw = currentAngle;
+            const duration = 5000; // 정확히 5초
+            let startTime = null;
+            let lastCount = 5;
+
+            countdownDisplay.classList.remove('hidden');
+            countdownDisplay.textContent = '5';
+
+            function animate(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const elapsed = timestamp - startTime;
+                let progress = elapsed / duration;
+
+                if (progress > 1) progress = 1;
+
+                // 카운트다운 업데이트
+                const currentCount = Math.ceil(5 - progress * 5);
+                if (currentCount > 0 && currentCount !== lastCount) {
+                    countdownDisplay.textContent = currentCount;
+                    // 애니메이션 리셋을 위해 클래스 뗐다 붙이기
+                    countdownDisplay.classList.remove('countdown-text');
+                    void countdownDisplay.offsetWidth; // 리플로우 트리거
+                    countdownDisplay.classList.add('countdown-text');
+                    lastCount = currentCount;
+                } else if (currentCount <= 0) {
+                    countdownDisplay.textContent = '';
+                }
+
+                const ease = easeOutCubic(progress);
+                currentAngle = startAngleRaw + (finalAngle - startAngleRaw) * ease;
+
+                drawRoulette();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // 애니메이션 종료
+                    isSpinning = false;
+                    countdownDisplay.classList.add('hidden');
+                    updateUI();
+
+                    // 결과 기록 추가
+                    addHistory(winnerMenu);
+
+                    // 결과 모달 띄우기
+                    showResult(winnerMenu);
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        startBtn.addEventListener('click', startRoulette);
+
+
+        // ===== 최근 결과 기록 =====
+        function addHistory(menuName) {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const timeStr = `${hours}:${minutes}`;
+
+            history.unshift({ time: timeStr, menu: menuName });
+
+            // 최대 5개까지만 유지
+            if (history.length > 5) {
+                history.pop();
+            }
+
+            renderHistory();
+        }
+
+        function renderHistory() {
+            historyList.innerHTML = '';
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<li class="history-empty">아직 돌린 기록이 없어요.</li>';
+                return;
+            }
+
+            history.forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'history-chip';
+                li.textContent = `${item.time} - ${item.menu}`;
+                historyList.appendChild(li);
+            });
+        }
+
+
+        // ===== 결과 모달 =====
+        let confettiParticles = [];
+        let confettiAnimationId = null;
+
+        function showResult(menuName) {
+            resultMenuName.textContent = menuName + "!";
+            resultModal.classList.remove('hidden');
+            // 부드러운 나타남 효과를 위해 약간의 지연 후 투명도 조절
+            setTimeout(() => {
+                resultModal.classList.remove('faded');
+                resultModalBox.classList.remove('small');
+            }, 10);
+
+            startConfetti();
+        }
+
+        function hideResult() {
+            resultModal.classList.add('faded');
+            resultModalBox.classList.add('small');
+            setTimeout(() => {
+                resultModal.classList.add('hidden');
+                stopConfetti();
+            }, 300); // CSS transition 시간(0.3초)과 맞춤
+        }
+
+        retryBtn.addEventListener('click', () => {
+            hideResult();
+            setTimeout(() => {
+                startRoulette();
+            }, 300);
+        });
+
+        closeModalBtn.addEventListener('click', hideResult);
+
+        // ===== 꽃가루 효과 =====
+        // 꽃가루 색상 (남색 포인트 + 룰렛 색상)
+        const confettiColors = colors.concat(['#1f3a6d', '#3b5f9e']);
+
+        // 꽃가루 파티클 클래스
+        class Particle {
+            constructor(w, h) {
+                this.x = Math.random() * w;
+                this.y = Math.random() * h - h; // 화면 위에서 시작
+                this.size = Math.random() * 10 + 5;
+                this.color = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+                this.speedY = Math.random() * 3 + 2; // 떨어지는 속도
+                this.speedX = Math.random() * 2 - 1; // 좌우 흔들림
+                this.rotation = Math.random() * 360;
+                this.rotationSpeed = Math.random() * 10 - 5;
+            }
+            update() {
+                this.y += this.speedY;
+                this.x += this.speedX;
+                this.rotation += this.rotationSpeed;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation * Math.PI / 180);
+                ctx.fillStyle = this.color;
+                ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+                ctx.restore();
+            }
+        }
+
+        // 꽃가루 캔버스 크기를 창 크기에 맞춤
+        function resizeConfetti() {
+            confettiCanvas.width = window.innerWidth;
+            confettiCanvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeConfetti);
+
+        function startConfetti() {
+            confettiCanvas.classList.remove('hidden');
+            resizeConfetti();
+
+            confettiParticles = [];
+            for (let i = 0; i < 150; i++) {
+                confettiParticles.push(new Particle(confettiCanvas.width, confettiCanvas.height));
+            }
+
+            function animateConfetti() {
+                confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+
+                let allFallen = true;
+                confettiParticles.forEach(p => {
+                    p.update();
+                    p.draw(confettiCtx);
+                    if (p.y < confettiCanvas.height) {
+                        allFallen = false; // 하나라도 아직 화면에 있으면 계속
+                    }
+                });
+
+                // 모두 떨어지면 멈춤 (한 번만 터지는 효과)
+                if (!allFallen) {
+                    confettiAnimationId = requestAnimationFrame(animateConfetti);
+                }
+            }
+
+            cancelAnimationFrame(confettiAnimationId);
+            animateConfetti();
+        }
+
+        function stopConfetti() {
+            cancelAnimationFrame(confettiAnimationId);
+            confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+            confettiCanvas.classList.add('hidden');
+        }
+
+        // ===== 초기화 실행 =====
+        updateUI();
+
+        // 글꼴이 늦게 로드되면 룰렛 글자를 다시 그림
+        if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(() => drawRoulette());
+        }
+    </script>
+</body>
+</html>
