@@ -181,6 +181,12 @@
             border-radius: 999px;
         }
 
+        /* 외부 링크 배지 (연한 남색) */
+        .badge.external {
+            color: var(--navy);
+            background: var(--navy-soft);
+        }
+
         /* [열기] 버튼 */
         .open-btn {
             display: inline-block;
@@ -267,6 +273,7 @@
         //   desc  : 한 줄 설명
         //   url   : 열 파일 이름
         //   ready : true = 사용 가능 / false = "준비 중" 배지 표시
+        //   external : true = 바깥 사이트 주소 (새 탭으로 열리고 "외부 링크" 배지 표시, 생략 가능)
         //
         // 참고: 이모지와 특수기호는 '\u{...}' 코드로 적었습니다.
         //   파일을 어떤 프로그램으로 열고 저장해도 깨지지 않게 하기 위해서입니다.
@@ -278,6 +285,8 @@
             { emoji: '\u{1F4C4}', name: 'PDF 병합\u00B7분할기',      desc: '여러 PDF를 합치고 나눠요',                url: 'pdf-tool.html',  ready: true  },
             { emoji: '\u{1F4CA}', name: '자동 데이터 분석기',         desc: '파일만 넣으면 분석하고 차트를 추천해요',   url: 'analyzer.html',  ready: true  },
             { emoji: '\u{26A1}',  name: '전력수요 대시보드',          desc: '공공데이터로 본 우리나라 전력 사용',       url: 'dashboard.html', ready: true  },
+            // 식당 정하기: 구글 Apps Script로 만든 외부 웹앱 (\u{1F37D} = 접시와 포크/나이프)
+            { emoji: '\u{1F37D}', name: '식당 정하기',                desc: '오늘 갈 식당을 함께 정해요',              url: 'https://script.google.com/macros/s/AKfycbyeYEx2qExiHPgms3zsgraE4355ZxWsOBOoPHktKh0FULscZN4iiGIhPT97mjrHjCyo/exec', ready: true, external: true },
         ];
 
         // ===== DOM 요소 =====
@@ -296,6 +305,12 @@
                 const badge = document.createElement('span');
                 badge.className = 'badge';
                 badge.textContent = '준비 중';
+                card.appendChild(badge);
+            } else if (tool.external) {
+                // 외부 사이트 배지
+                const badge = document.createElement('span');
+                badge.className = 'badge external';
+                badge.textContent = '외부 링크';
                 card.appendChild(badge);
             }
 
@@ -320,6 +335,11 @@
                 button.href = tool.url;
                 button.className = 'open-btn';
                 button.textContent = '열기';
+                // 외부 사이트는 새 탭으로 열어서 도구 모음 페이지가 그대로 남게 함
+                if (tool.external) {
+                    button.target = '_blank';
+                    button.rel = 'noopener noreferrer';
+                }
             } else {
                 button = document.createElement('span');
                 button.className = 'open-btn disabled';
