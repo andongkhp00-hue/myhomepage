@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <!-- 모바일 환경에서도 잘 보이도록 뷰포트 설정 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>전력수요 대시보드</title>
+
+    <!-- Noto Sans KR 글꼴 (jsDelivr CDN) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5/400.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5/700.css">
+    <!-- PapaParse: CSV 읽기 (cdnjs) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Chart.js: 차트 그리기 (jsDelivr) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* ===== 공통 색상 변수 (오트밀 베이지 + 남색 포인트) ===== */
+        :root {
+            --bg: #f3efe6;
+            --card: #fbf9f4;
+            --surface: #f2ede3;
+            --surface-hover: #e8e1d3;
+            --input-bg: #fffdf9;
+            --border: #e3dccf;
+            --border-strong: #d3c9b8;
+            --navy: #1f3a6d;
+            --navy-dark: #152a52;
+            --navy-soft: #e2e5ec;
+            --navy-soft-hover: #d2d8e3;
+            --text: #2e2b27;
+            --muted: #7a7266;
+            --danger: #b4532a;
+            --danger-soft: #f3e3da;
+            --shadow: rgba(80, 64, 40, 0.08);
+            /* 계절 색 (채도를 낮춘 자연색) */
+            --spring: #8fae8b;   /* 세이지 */
+            --summer: #c98f7f;   /* 클레이 로즈 */
+            --autumn: #d4a35a;   /* 샌드 */
+            --winter: #5b7fb5;   /* 더스티 블루 */
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+        }
+        button, select, input { font-family: inherit; }
+        button { cursor: pointer; }
+        .hidden { display: none !important; }
+
+        /* SVG 아이콘 공통 */
+        .ico {
+            width: 1em; height: 1em; flex-shrink: 0;
+            fill: none; stroke: currentColor; stroke-width: 2;
+            stroke-linecap: round; stroke-linejoin: round;
+            vertical-align: -0.15em;
+        }
+
+        .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+        /* ===== 상단 링크 ===== */
+        .topbar { padding-top: 16px; }
+        .back-link {
+            display: inline-flex; align-items: center; gap: 4px;
+            color: var(--navy); text-decoration: none;
+            font-size: 15px; font-weight: 700;
+            padding: 6px 12px; border-radius: 999px;
+            transition: background 0.2s;
+        }
+        .back-link:hover { background: var(--navy-soft); }
+
+        /* ===== 제목 ===== */
+        .page-head { padding: 20px 16px 6px; }
+        .page-head h1 { margin: 0; font-size: clamp(24px, 5vw, 36px); color: var(--navy); letter-spacing: -0.5px; }
+        .page-head .sub { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+
+        main { flex: 1; padding-top: 18px; padding-bottom: 28px; display: flex; flex-direction: column; gap: 20px; }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            box-shadow: 0 4px 16px var(--shadow);
+            padding: 22px;
+        }
+
+        /* ===== 상태 안내 (불러오는 중 / 실패) ===== */
+        .status-box { text-align: center; padding: 40px 20px; }
+        .status-box .big { font-size: 17px; font-weight: 700; margin: 0 0 6px; }
+        .status-box p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.7; }
+        .status-box.error .big { color: var(--danger); }
+        .status-box .btn { margin-top: 18px; }
+        .spinner {
+            width: 38px; height: 38px; margin: 0 auto 14px;
+            border: 4px solid var(--navy-soft); border-top-color: var(--navy);
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+            border: none; border-radius: 12px;
+            padding: 10px 18px; font-size: 15px; font-weight: 700;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: var(--navy); color: var(--card); }
+        .btn-primary:hover { background: var(--navy-dark); }
+        .btn-soft { background: var(--navy-soft); color: var(--navy); }
+        .btn-soft:hover { background: var(--navy-soft-hover); }
+        .btn-small { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+
+        /* ===== 기간 필터 ===== */
+        .filter-bar {
+            display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+            padding: 16px 20px;
+        }
+        .filter-item label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+        .filter-item select, .filter-item input {
+            padding: 8px 10px; font-size: 14px; color: var(--text);
+            border: 2px solid var(--border); border-radius: 10px; background: var(--input-bg);
+        }
+        .filter-item select:focus, .filter-item input:focus { outline: none; border-color: var(--navy); }
+        .filter-bar .tilde { padding-bottom: 10px; color: var(--muted); }
+        .filter-bar .spacer { flex: 1; }
+        .filter-info { font-size: 13px; color: var(--muted); padding-bottom: 9px; }
+
+        /* ===== KPI 카드 ===== */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+        .kpi {
+            background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+            box-shadow: 0 4px 16px var(--shadow); padding: 18px;
+        }
+        .kpi .label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+        .kpi .label .ico { color: var(--navy); }
+        .kpi .value { font-size: clamp(22px, 2.6vw, 28px); font-weight: 700; color: var(--navy); margin: 8px 0 4px; font-variant-numeric: tabular-nums; }
+        .kpi .value small { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 2px; }
+        .kpi .detail { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+        /* ===== 차트 카드 ===== */
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .chart-card.wide { grid-column: 1 / -1; }
+        .chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+        .chart-head h2 { margin: 0; font-size: 17px; }
+        .chart-head .unit { font-size: 12px; color: var(--muted); }
+        .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+        .legend span { display: inline-flex; align-items: center; gap: 5px; }
+        .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
+        .chart-box { position: relative; height: 300px; }
+        .chart-card.wide .chart-box { height: 320px; }
+        .heat-box { position: relative; }
+        .heat-box canvas { display: block; width: 100%; }
+        .heat-scale { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 10px; }
+        .heat-scale .bar { flex: 0 1 180px; height: 10px; border-radius: 99px; background: linear-gradient(90deg, #f2ede3, #1f3a6d); }
+        .heat-tip {
+            position: absolute; pointer-events: none; z-index: 5;
+            background: var(--navy); color: var(--card); font-size: 12px;
+            padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+            transform: translate(-50%, -120%);
+        }
+        /* 자동 해설 */
+        .insight {
+            margin-top: 14px; padding: 12px 14px;
+            background: var(--surface); border-radius: 12px;
+            font-size: 14px; line-height: 1.7;
+            display: flex; gap: 8px;
+        }
+        .insight .ico { color: var(--navy); margin-top: 4px; }
+        .insight strong { color: var(--navy); }
+
+        /* ===== 맨 아래 출처 ===== */
+        .source-box { font-size: 13px; color: var(--muted); line-height: 1.8; padding: 16px 20px; }
+        .source-box strong { color: var(--text); }
+        .privacy-note { text-align: center; font-size: 12px; color: var(--muted); padding: 4px 16px 24px; }
+
+        /* 반응형 */
+        @media (max-width: 900px) {
+            .kpi-grid { grid-template-columns: 1fr 1fr; }
+            .chart-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 480px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+            .card { padding: 16px; }
+            .chart-box, .chart-card.wide .chart-box { height: 260px; }
+            .filter-item { flex: 1 1 140px; }
+            .filter-item select, .filter-item input { width: 100%; }
+            .filter-bar .tilde { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 아이콘 모음 (SVG): 깨지지 않도록 직접 그림 -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+            <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></symbol>
+            <symbol id="i-avg" viewBox="0 0 24 24"><path d="M3 12h18"/><path d="M3 6c3 0 3 12 6 12s3-12 6-12 3 12 6 12"/></symbol>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+            <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+            <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></symbol>
+            <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></symbol>
+        </defs>
+    </svg>
+
+    <!-- 상단: 업무 도구 모음으로 돌아가기 -->
+    <nav class="wrap topbar">
+        <a href="index.html" class="back-link"><svg class="ico" aria-hidden="true"><use href="#i-arrow-left"></use></svg>업무 도구 모음</a>
+    </nav>
+
+    <header class="wrap page-head">
+        <h1>우리나라는 언제 전기를 가장 많이 쓸까?</h1>
+        <p class="sub" id="subtitle">데이터를 불러오는 중이에요&hellip;</p>
+    </header>
+
+    <main class="wrap">
+
+        <!-- 불러오는 중 / 실패 안내 -->
+        <section class="card status-box" id="statusBox">
+            <div class="spinner"></div>
+            <p class="big">data.csv를 읽고 있어요</p>
+            <p>잠시만 기다려 주세요.</p>
+        </section>
+
+        <!-- 내 CSV 파일 직접 올리기 (숨김 입력) -->
+        <input type="file" id="fileInput" accept=".csv,text/csv" class="hidden">
+
+        <div id="dashboard" class="hidden" style="display:flex;flex-direction:column;gap:20px;">
+
+            <!-- 기간 필터 -->
+            <section class="card filter-bar">
+                <div class="filter-item">
+                    <label for="yearSel">기간 선택</label>
+                    <select id="yearSel"></select>
+                </div>
+                <div class="filter-item">
+                    <label for="startDate">시작일</label>
+                    <input type="date" id="startDate">
+                </div>
+                <span class="tilde">~</span>
+                <div class="filter-item">
+                    <label for="endDate">종료일</label>
+                    <input type="date" id="endDate">
+                </div>
+                <span class="filter-info" id="filterInfo"></span>
+                <span class="spacer"></span>
+                <button class="btn btn-soft btn-small" id="uploadBtnSmall">
+                    <svg class="ico" aria-hidden="true"><use href="#i-upload"></use></svg>내 CSV로 바꾸기
+                </button>
+            </section>
+
+            <!-- KPI 카드 -->
+            <section class="kpi-grid">
+                <div class="kpi">
+                    <div class="label"><svg class="ico" aria-hidden="true"><use href="#i-bolt"></use></svg>기간 중 최대 수요</div>
+                    <div class="value" id="kpiMax">-</div>
+                    <div class="detail" id="kpiMaxWhen">-</div>
+                </div>
+                <div class="kpi">
+                    <div class="label"><svg class="ico" aria-hidden="true"><use href="#i-avg"></use></svg>평균 수요</div>
+                    <div class="value" id="kpiAvg">-</div>
+                    <div class="detail" id="kpiAvgDetail">-</div>
+                </div>
+                <div class="kpi">
+                    <div class="label"><svg class="ico" aria-hidden="true"><use href="#i-sun"></use></svg>최대 수요가 가장 많이 나온 계절</div>
+                    <div class="value" id="kpiSeason">-</div>
+                    <div class="detail" id="kpiSeasonDetail">-</div>
+                </div>
+                <div class="kpi">
+                    <div class="label"><svg class="ico" aria-hidden="true"><use href="#i-clock"></use></svg>가장 수요가 많은 시간대</div>
+                    <div class="value" id="kpiHour">-</div>
+                    <div class="detail" id="kpiHourDetail">-</div>
+                </div>
+            </section>
+
+            <!-- 차트 -->
+            <section class="chart-grid">
+                <!-- 1) 일별 최대 수요 추이 -->
+                <div class="card chart-card wide">
+                    <div class="chart-head">
+                        <div><h2>일별 최대 수요 추이</h2><span class="unit">단위: MW, 하루 24시간 중 가장 큰 값</span></div>
+                        <div class="legend">
+                            <span><i style="background:rgba(201,143,127,0.25)"></i>여름 (6~8월)</span>
+                            <span><i style="background:rgba(91,127,181,0.20)"></i>겨울 (12~2월)</span>
+                        </div>
+                    </div>
+                    <div class="chart-box"><canvas id="dailyChart"></canvas></div>
+                    <div class="insight" id="insightDaily"></div>
+                </div>
+
+                <!-- 2) 시간대 x 요일 히트맵 -->
+                <div class="card chart-card wide">
+                    <div class="chart-head">
+                        <div><h2>시간대 &times; 요일 평균 수요</h2><span class="unit">단위: MW, 색이 진할수록 수요가 커요</span></div>
+                    </div>
+                    <div class="heat-box" id="heatBox"><canvas id="heatCanvas"></canvas><div class="heat-tip hidden" id="heatTip"></div></div>
+                    <div class="heat-scale"><span id="heatMin">낮음</span><span class="bar"></span><span id="heatMax">높음</span></div>
+                    <div class="insight" id="insightHeat"></div>
+                </div>
+
+                <!-- 3) 계절별 하루 수요 곡선 -->
+                <div class="card chart-card">
+                    <div class="chart-head">
+                        <div><h2>계절별 하루 수요 곡선</h2><span class="unit">단위: MW, 시간대별 평균</span></div>
+                    </div>
+                    <div class="chart-box"><canvas id="seasonChart"></canvas></div>
+                    <div class="insight" id="insightSeason"></div>
+                </div>
+
+                <!-- 4) 월별 평균 수요 -->
+                <div class="card chart-card">
+                    <div class="chart-head">
+                        <div><h2>월별 평균 수요</h2><span class="unit">단위: MW</span></div>
+                    </div>
+                    <div class="chart-box"><canvas id="monthChart"></canvas></div>
+                    <div class="insight" id="insightMonth"></div>
+                </div>
+            </section>
+
+            <!-- 출처와 데이터 기준일 -->
+            <section class="card source-box" id="sourceBox"></section>
+        </div>
+    </main>
+
+    <footer class="privacy-note">
+        입력한 내용은 이 브라우저 안에서만 처리되며 어디에도 저장&middot;전송되지 않습니다.
+    </footer>
+
+    <script>
+    // =====================================================================
+    // 전력수요 대시보드
+    // - 같은 폴더의 data.csv를 읽어 브라우저 안에서만 계산합니다. (서버 전송, localStorage 없음)
+    // - "1시"는 0시~1시 사이의 수요, "24시"는 23시~24시 사이의 수요입니다.
+    // =====================================================================
+
+    const DATA_URL = 'data.csv';
+    const UNIT = 'MW';
+    const DOT = '\u{B7}';                                // 가운뎃점
+    const SOURCE = `공공데이터포털 ${DOT} 한국전력거래소`;
+    const DATASET_NAME = '한국전력거래소 시간별 전국 전력수요량';
+    const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+    const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];              // 히트맵은 월요일부터
+    const SEASONS = {
+        spring: { label: '봄',   color: '#8fae8b', months: [3, 4, 5] },
+        summer: { label: '여름', color: '#c98f7f', months: [6, 7, 8] },
+        autumn: { label: '가을', color: '#d4a35a', months: [9, 10, 11] },
+        winter: { label: '겨울', color: '#5b7fb5', months: [12, 1, 2] },
+    };
+    const CARD_BG = '#fbf9f4';
+
+    // ----- 상태 (메모리에만 보관) -----
+    let allRecords = [];     // [{key:'2025-01-01', y, m, d, dow, hour(1~24), v}]
+    let dataInfo = {};       // { fileName, encoding, format }
+    let charts = {};
+    let heatData = null;
+
+    const $ = (id) => document.getElementById(id);
+
+    // ===== 공통 도우미 =====
+    function fmt(v, digits = 0) {
+        if (v === null || v === undefined || !isFinite(v)) return '-';
+        return Number(v).toLocaleString('ko-KR', { maximumFractionDigits: digits });
+    }
+    function pct(v) { return (Math.round(v * 10) / 10).toFixed(1); }
+    function esc(s) {
+        return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function seasonOf(m) {
+        return Object.keys(SEASONS).find(k => SEASONS[k].months.includes(m));
+    }
+    // 24시간 숫자를 "오전 9시", "오후 5시"처럼 읽기 쉽게
+    function hourText(h) {
+        if (h === 24 || h === 0) return '밤 12시';
+        if (h < 12) return `오전 ${h}시`;
+        if (h === 12) return '낮 12시';
+        return `오후 ${h - 12}시`;
+    }
+    function dateText(key) {
+        const [y, m, d] = key.split('-').map(Number);
+        return `${y}년 ${m}월 ${d}일`;
+    }
+    function dowOfKey(key) {
+        const [y, m, d] = key.split('-').map(Number);
+        return DOW[new Date(y, m - 1, d).getDay()];
+    }
+    // 받침에 따라 조사 고르기 (이/가, 은/는)
+    function josa(word, a, b) {
+        const s = String(word);
+        const ch = s.charCodeAt(s.length - 1);
+        if (ch >= 0xAC00 && ch <= 0xD7A3) return s + ((ch - 0xAC00) % 28 ? a : b);
+        const last = s[s.length - 1];
+        if (/[0-9]/.test(last)) return s + ('013678'.includes(last) ? a : b);
+        return s + a + '(' + b + ')';
+    }
+    function toNumber(v) {
+        if (typeof v === 'number') return isFinite(v) ? v : null;
+        if (v === null || v === undefined) return null;
+        const s = String(v).replace(/[,\s]/g, '');
+        if (s === '' || !/^[-+]?\d*\.?\d+$/.test(s)) return null;
+        return parseFloat(s);
+    }
+    // 날짜 해석: 2025-01-01, 2025.1.1, 2025/01/01, 20250101, 2025년 1월 1일 (뒤에 시간이 붙어도 됨)
+    function parseDate(v) {
+        const s = String(v || '').trim();
+        let m = s.match(/^(\d{4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/) || s.match(/^(\d{4})(\d{2})(\d{2})/);
+        if (!m) return null;
+        const y = +m[1], mo = +m[2], d = +m[3];
+        if (y < 1900 || y > 2100 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+        return { y, m: mo, d };
+    }
+    function makeRecord(p, hour, v) {
+        const key = `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+        return { key, y: p.y, m: p.m, d: p.d, dow: new Date(p.y, p.m - 1, p.d).getDay(), hour, v };
+    }
+
+    // =====================================================================
+    // 1) 데이터 읽기
+    // =====================================================================
+    // 인코딩 판단: UTF-8로 엄격하게 읽어 보고, 깨지면 EUC-KR로 읽음
+    function decodeBuffer(buf) {
+        try {
+            const text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+            return { text: text.replace(/^\u{FEFF}/u, ''), encoding: 'UTF-8' };
+        } catch (e) {
+            return { text: new TextDecoder('euc-kr').decode(buf), encoding: 'EUC-KR' };
+        }
+    }
+
+    // CSV 표 -> 레코드 목록 (가로형/세로형 자동 판단)
+    const HOUR_HEADER = /^(\d{1,2})\s*(시|h|H)?$/;
+    function toRecords(table) {
+        table = table.map(r => r.map(c => (c === null || c === undefined) ? '' : String(c).trim()))
+                     .filter(r => r.some(c => c !== ''));
+        // 제목 행 찾기: "날짜"류 단어가 있거나 "1시~24시" 칸이 20개 이상인 행
+        let h = table.findIndex(r => r.some(c => /날짜|일자|일시|기준일|date/i.test(c)) ||
+                                     r.filter(c => HOUR_HEADER.test(c)).length >= 20);
+        if (h < 0) h = 0;
+        const header = table[h];
+        const body = table.slice(h + 1);
+        let dateCol = header.findIndex(c => /날짜|일자|일시|기준일|date/i.test(c));
+        if (dateCol < 0) dateCol = 0;
+
+        // 1시~24시 열 찾기
+        const hourCols = header.map((c, i) => {
+            const m = c.match(HOUR_HEADER);
+            return m && i !== dateCol ? { i, hour: +m[1] } : null;
+        }).filter(o => o && o.hour >= 0 && o.hour <= 24);
+
+        const records = [];
+        if (hourCols.length >= 20) {
+            // ----- 가로형: 날짜 | 1시 | 2시 | ... | 24시 -> 날짜, 시간, 수요량 세 열로 펼침 -----
+            const zeroBased = hourCols.some(o => o.hour === 0);   // 0시~23시 형식이면 1시~24시로 맞춤
+            body.forEach(r => {
+                const p = parseDate(r[dateCol]);
+                if (!p) return;
+                hourCols.forEach(o => {
+                    const v = toNumber(r[o.i]);
+                    if (v !== null && v > 0) records.push(makeRecord(p, zeroBased ? o.hour + 1 : o.hour, v));
+                });
+            });
+            return { records, format: '가로형(날짜 + 1시~24시 열)을 날짜/시간/수요량으로 변환' };
+        }
+
+        // ----- 세로형: 날짜 | 시간 | 수요량 -----
+        let timeCol = header.findIndex((c, i) => i !== dateCol && /시간|시각|hour|time|^시$/i.test(c));
+        let valCol = header.findIndex((c, i) => i !== dateCol && i !== timeCol && /수요|부하|전력|MW|값|량/i.test(c));
+        if (valCol < 0) {
+            // 이름으로 못 찾으면 숫자가 가장 많은 열
+            let best = -1, bestCnt = 0;
+            header.forEach((_, i) => {
+                if (i === dateCol || i === timeCol) return;
+                const cnt = body.slice(0, 200).filter(r => toNumber(r[i]) !== null).length;
+                if (cnt > bestCnt) { best = i; bestCnt = cnt; }
+            });
+            valCol = best;
+        }
+        if (valCol < 0) return { records, format: '알 수 없는 형식' };
+
+        const readHour = (r) => {
+            const src = timeCol >= 0 ? r[timeCol] : (String(r[dateCol]).split(/[ T]/)[1] || '');
+            const m = String(src).match(/(\d{1,2})/);
+            return m ? +m[1] : null;
+        };
+        const hours = body.map(readHour).filter(x => x !== null);
+        const zeroBased = hours.includes(0);
+        body.forEach(r => {
+            const p = parseDate(r[dateCol]);
+            const hr = readHour(r);
+            const v = toNumber(r[valCol]);
+            if (!p || hr === null || v === null || v <= 0) return;
+            records.push(makeRecord(p, zeroBased ? hr + 1 : hr, v));
+        });
+        return { records, format: '세로형(날짜, 시간, 수요량)' };
+    }
+
+    function loadFromText(text, meta) {
+        const parsed = Papa.parse(text, { skipEmptyLines: 'greedy' });
+        const { records, format } = toRecords(parsed.data);
+        if (records.length < 24) throw new Error('전력수요 값을 찾지 못했어요. 날짜 열과 1시~24시 열(또는 날짜/시간/수요량 열)이 있는지 확인해 주세요.');
+        records.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : a.hour - b.hour);
+        allRecords = records;
+        dataInfo = { ...meta, format };
+        setupFilter();
+        $('statusBox').classList.add('hidden');
+        $('dashboard').classList.remove('hidden');
+        applyFilter();
+    }
+
+    async function loadDefault() {
+        try {
+            const res = await fetch(DATA_URL, { cache: 'no-store' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const { text, encoding } = decodeBuffer(await res.arrayBuffer());
+            loadFromText(text, { fileName: DATA_URL, encoding });
+        } catch (err) {
+            console.warn('data.csv 읽기 실패:', err);
+            showError(err.message && err.message.startsWith('전력수요') ? err.message : null);
+        }
+    }
+
+    // data.csv를 못 읽었을 때 안내 + 직접 올리기 버튼
+    function showError(detail) {
+        $('dashboard').classList.add('hidden');
+        const box = $('statusBox');
+        box.classList.remove('hidden');
+        box.classList.add('error');
+        box.innerHTML = `
+            <p class="big">데이터를 불러오지 못했어요</p>
+            <p>${detail ? esc(detail) : 'data.csv를 같은 위치에 올렸는지 확인하세요.'}<br>
+               (내 PC에서 파일을 바로 열면 브라우저 보안 때문에 data.csv를 읽을 수 없어요. 아래 버튼으로 직접 올려 주세요.)</p>
+            <button class="btn btn-primary" id="uploadBtn">
+                <svg class="ico" aria-hidden="true"><use href="#i-upload"></use></svg>내 CSV 파일 직접 올리기
+            </button>`;
+        $('uploadBtn').addEventListener('click', () => $('fileInput').click());
+        $('subtitle').textContent = `출처: ${SOURCE}`;
+    }
+
+    $('fileInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+            const { text, encoding } = decodeBuffer(await file.arrayBuffer());
+            loadFromText(text, { fileName: file.name, encoding });
+        } catch (err) {
+            showError(err.message);
+        }
+    });
+    $('uploadBtnSmall').addEventListener('click', () => $('fileInput').click());
+
+    // =====================================================================
+    // 2) 기간 필터
+    // =====================================================================
+    function setupFilter() {
+        const first = allRecords[0].key, last = allRecords[allRecords.length - 1].key;
+        const years = [...new Set(allRecords.map(r => r.y))];
+        $('yearSel').innerHTML = '<option value="all">전체 기간</option>' +
+            years.map(y => `<option value="${y}">${y}년</option>`).join('') +
+            '<option value="custom">직접 선택</option>';
+        ['startDate', 'endDate'].forEach(id => { $(id).min = first; $(id).max = last; });
+        $('startDate').value = first;
+        $('endDate').value = last;
+        $('yearSel').value = 'all';
+    }
+    $('yearSel').addEventListener('change', () => {
+        const v = $('yearSel').value;
+        const first = allRecords[0].key, last = allRecords[allRecords.length - 1].key;
+        if (v === 'all') { $('startDate').value = first; $('endDate').value = last; }
+        else if (v !== 'custom') {
+            $('startDate').value = `${v}-01-01` < first ? first : `${v}-01-01`;
+            $('endDate').value = `${v}-12-31` > last ? last : `${v}-12-31`;
+        }
+        applyFilter();
+    });
+    ['startDate', 'endDate'].forEach(id => $(id).addEventListener('change', () => {
+        $('yearSel').value = 'custom';
+        applyFilter();
+    }));
+
+    function applyFilter() {
+        let s = $('startDate').value, e = $('endDate').value;
+        if (s && e && s > e) { [s, e] = [e, s]; $('startDate').value = s; $('endDate').value = e; }
+        const recs = allRecords.filter(r => (!s || r.key >= s) && (!e || r.key <= e));
+        if (!recs.length) {
+            $('filterInfo').textContent = '선택한 기간에 데이터가 없어요.';
+            return;
+        }
+        render(recs);
+    }
+
+    // =====================================================================
+    // 3) 계산 + 화면 그리기
+    // =====================================================================
+    function render(recs) {
+        const days = groupDays(recs);
+        const first = days[0].key, last = days[days.length - 1].key;
+        $('subtitle').innerHTML = `데이터 기간: ${dateText(first)} ~ ${dateText(last)} (${fmt(days.length)}일, ${fmt(recs.length)}개 시간 값) ${DOT} 출처: ${esc(SOURCE)}`;
+        $('filterInfo').textContent = `${fmt(days.length)}일 선택됨`;
+
+        renderKpis(recs, days);
+        renderDaily(days);
+        renderHeatmap(recs);
+        renderSeason(recs);
+        renderMonthly(recs);
+        renderSource();
+    }
+
+    // 날짜별로 묶기: 일 최대값, 최대 시간, 평균
+    function groupDays(recs) {
+        const map = new Map();
+        recs.forEach(r => {
+            let o = map.get(r.key);
+            if (!o) { o = { key: r.key, y: r.y, m: r.m, dow: r.dow, max: -Infinity, maxHour: 0, sum: 0, n: 0 }; map.set(r.key, o); }
+            if (r.v > o.max) { o.max = r.v; o.maxHour = r.hour; }
+            o.sum += r.v; o.n++;
+        });
+        return [...map.values()].sort((a, b) => a.key < b.key ? -1 : 1);
+    }
+    // 시간대별 평균 (조건 함수로 걸러서)
+    function hourlyAvg(recs, filterFn) {
+        const sum = new Array(25).fill(0), cnt = new Array(25).fill(0);
+        recs.forEach(r => { if (!filterFn || filterFn(r)) { sum[r.hour] += r.v; cnt[r.hour]++; } });
+        return sum.map((s, h) => cnt[h] ? s / cnt[h] : null).slice(1);   // index 0 = 1시
+    }
+
+    // ----- KPI -----
+    function renderKpis(recs, days) {
+        // 최대 수요
+        const top = recs.reduce((a, r) => r.v > a.v ? r : a, recs[0]);
+        $('kpiMax').innerHTML = `${fmt(top.v)}<small>${UNIT}</small>`;
+        $('kpiMaxWhen').textContent = `${dateText(top.key)} (${DOW[top.dow]}) ${hourText(top.hour)}`;
+
+        // 평균 수요
+        const avg = recs.reduce((a, r) => a + r.v, 0) / recs.length;
+        const minR = recs.reduce((a, r) => r.v < a.v ? r : a, recs[0]);
+        $('kpiAvg').innerHTML = `${fmt(avg)}<small>${UNIT}</small>`;
+        $('kpiAvgDetail').textContent = `최저 ${fmt(minR.v)} ${UNIT} (${dateText(minR.key)} ${hourText(minR.hour)})`;
+
+        // 최대 수요가 가장 많이 나온 계절: 일 최대 수요 상위 10%(최대 30일) 날짜의 계절을 셈
+        const topN = Math.min(30, Math.max(1, Math.round(days.length * 0.1)));
+        const topDays = [...days].sort((a, b) => b.max - a.max).slice(0, topN);
+        const cnt = {};
+        topDays.forEach(d => { const s = seasonOf(d.m); cnt[s] = (cnt[s] || 0) + 1; });
+        const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+        $('kpiSeason').textContent = SEASONS[best[0]].label;
+        $('kpiSeasonDetail').textContent = `일 최대 수요 상위 ${topN}일 중 ${best[1]}일`;
+
+        // 가장 수요가 많은 시간대: 시간대별 평균이 가장 큰 시간
+        const hv = hourlyAvg(recs);
+        let bh = 0; hv.forEach((v, i) => { if (v !== null && v > hv[bh]) bh = i; });
+        $('kpiHour').textContent = hourText(bh + 1);
+        $('kpiHourDetail').textContent = `${bh + 1}시 열(${bh}~${bh + 1}시) 평균 ${fmt(hv[bh])} ${UNIT}`;
+    }
+
+    // ----- Chart.js 공통 -----
+    if (window.Chart) {
+        Chart.defaults.font.family = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
+        Chart.defaults.color = '#5c554b';
+        Chart.defaults.borderColor = 'rgba(80, 64, 40, 0.10)';
+    }
+    function resetChart(name) { if (charts[name]) { charts[name].destroy(); charts[name] = null; } }
+    const yTicks = { callback: (v) => fmt(v) };
+
+    // 여름/겨울 구간에 배경색을 칠하는 플러그인 (일별 차트 전용)
+    const seasonBandPlugin = {
+        id: 'seasonBands',
+        beforeDatasetsDraw(chart, args, opts) {
+            const { ctx, chartArea, scales } = chart;
+            const months = opts.months || [];
+            if (!months.length) return;
+            const x = scales.x;
+            const half = months.length > 1 ? (x.getPixelForValue(1) - x.getPixelForValue(0)) / 2 : 10;
+            ctx.save();
+            let i = 0;
+            while (i < months.length) {
+                const s = seasonOf(months[i]);
+                let j = i;
+                while (j + 1 < months.length && seasonOf(months[j + 1]) === s) j++;
+                if (s === 'summer' || s === 'winter') {
+                    const x1 = Math.max(chartArea.left, x.getPixelForValue(i) - half);
+                    const x2 = Math.min(chartArea.right, x.getPixelForValue(j) + half);
+                    ctx.fillStyle = s === 'summer' ? 'rgba(201, 143, 127, 0.18)' : 'rgba(91, 127, 181, 0.14)';
+                    ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.bottom - chartArea.top);
+                }
+                i = j + 1;
+            }
+            ctx.restore();
+        }
+    };
+
+    // ----- 1) 일별 최대 수요 추이 -----
+    function renderDaily(days) {
+        resetChart('daily');
+        charts.daily = new Chart($('dailyChart'), {
+            type: 'line',
+            data: {
+                labels: days.map(d => d.key),
+                datasets: [{
+                    label: '일 최대 수요', data: days.map(d => d.max),
+                    borderColor: '#1f3a6d', borderWidth: 1.8, pointRadius: 0, pointHoverRadius: 4,
+                    tension: 0.2, fill: false,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    seasonBands: { months: days.map(d => d.m) },
+                    tooltip: { callbacks: {
+                        title: (items) => { const d = days[items[0].dataIndex]; return `${dateText(d.key)} (${DOW[d.dow]})`; },
+                        label: (c) => ` 최대 ${fmt(c.raw)} ${UNIT} (${hourText(days[c.dataIndex].maxHour)})`,
+                    } },
+                },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 12, maxRotation: 0, callback: function (v) { const k = this.getLabelForValue(v); return k.slice(0, 7); } }, grid: { display: false } },
+                    y: { ticks: yTicks },
+                },
+            },
+            plugins: [seasonBandPlugin],
+        });
+
+        // 해설
+        const top = days.reduce((a, d) => d.max > a.max ? d : a, days[0]);
+        const low = days.reduce((a, d) => d.max < a.max ? d : a, days[0]);
+        let text = `일 최대 수요는 <strong>${dateText(top.key)}(${DOW[top.dow]}) ${hourText(top.maxHour)}</strong>에 <strong>${fmt(top.max)} ${UNIT}</strong>로 가장 높았고, 가장 낮은 날은 ${dateText(low.key)}(${DOW[low.dow]}, ${fmt(low.max)} ${UNIT})입니다.`;
+        const avgOf = (s) => { const ds = days.filter(d => seasonOf(d.m) === s); return ds.length ? ds.reduce((a, d) => a + d.max, 0) / ds.length : null; };
+        const su = avgOf('summer'), wi = avgOf('winter');
+        if (su && wi) {
+            const diff = (su - wi) / wi * 100;
+            text += ` 여름 평균 일 최대 수요는 겨울보다 <strong>${pct(Math.abs(diff))}% ${diff >= 0 ? '높습니다' : '낮습니다'}</strong>.`;
+        }
+        setInsight('insightDaily', text);
+    }
+
+    // ----- 2) 시간대 x 요일 히트맵 (캔버스에 직접 그림) -----
+    function renderHeatmap(recs) {
+        const sum = {}, cnt = {};
+        recs.forEach(r => { const k = r.dow + '_' + r.hour; sum[k] = (sum[k] || 0) + r.v; cnt[k] = (cnt[k] || 0) + 1; });
+        const matrix = DOW_ORDER.map(d => Array.from({ length: 24 }, (_, i) => {
+            const k = d + '_' + (i + 1); return cnt[k] ? sum[k] / cnt[k] : null;
+        }));
+        heatData = matrix;
+        drawHeatmap();
+
+        // 해설: 평일과 주말 비교, 가장 큰 조합
+        const avgBy = (fn) => { const rs = recs.filter(fn); return rs.length ? rs.reduce((a, r) => a + r.v, 0) / rs.length : null; };
+        const wk = avgBy(r => r.dow >= 1 && r.dow <= 5), we = avgBy(r => r.dow === 0 || r.dow === 6);
+        let best = { v: -Infinity };
+        matrix.forEach((row, i) => row.forEach((v, j) => { if (v !== null && v > best.v) best = { v, d: DOW_ORDER[i], h: j + 1 }; }));
+        let text = `가장 수요가 큰 조합은 <strong>${DOW[best.d]}요일 ${hourText(best.h)}</strong>(평균 ${fmt(best.v)} ${UNIT})입니다.`;
+        if (wk && we) text = `평일 평균 수요는 주말보다 <strong>${pct(Math.abs(wk - we) / we * 100)}% ${wk >= we ? '높고' : '낮고'}</strong>, ` + text;
+        setInsight('insightHeat', text);
+    }
+
+    function heatColor(t) {
+        const a = [242, 237, 227], b = [31, 58, 109];   // 연한 베이지 -> 남색
+        return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(',')})`;
+    }
+    let heatLayout = null;
+    function drawHeatmap() {
+        if (!heatData) return;
+        const box = $('heatBox'), canvas = $('heatCanvas');
+        const W = box.clientWidth;
+        const narrow = W < 560;
+        const labelW = 34, headH = 24;
+        const cellW = (W - labelW) / 24;
+        const cellH = narrow ? 26 : 32;
+        const H = headH + cellH * 7;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = W * dpr; canvas.height = H * dpr;
+        canvas.style.height = H + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        const vals = heatData.flat().filter(v => v !== null);
+        const min = Math.min(...vals), max = Math.max(...vals);
+        const font = "'Noto Sans KR', 'Malgun Gothic', sans-serif";
+        ctx.textBaseline = 'middle';
+        ctx.font = `11px ${font}`;
+        ctx.fillStyle = '#7a7266';
+        ctx.textAlign = 'center';
+        for (let h = 1; h <= 24; h++) {
+            if (narrow && h % 3 !== 0 && h !== 1) continue;
+            ctx.fillText(h + '시', labelW + cellW * (h - 1) + cellW / 2, headH / 2);
+        }
+        ctx.font = `bold 12px ${font}`;
+        ctx.textAlign = 'left';
+        DOW_ORDER.forEach((d, i) => {
+            ctx.fillStyle = d === 0 || d === 6 ? '#b4532a' : '#5c554b';
+            ctx.fillText(DOW[d], 6, headH + cellH * i + cellH / 2);
+        });
+        heatData.forEach((row, i) => row.forEach((v, j) => {
+            const t = v === null ? 0 : (max > min ? (v - min) / (max - min) : 0.5);
+            ctx.fillStyle = v === null ? '#ece6da' : heatColor(0.05 + t * 0.95);
+            ctx.fillRect(labelW + cellW * j + 1, headH + cellH * i + 1, cellW - 2, cellH - 2);
+        }));
+        heatLayout = { labelW, headH, cellW, cellH };
+        $('heatMin').textContent = `${fmt(min)} ${UNIT}`;
+        $('heatMax').textContent = `${fmt(max)} ${UNIT}`;
+    }
+    // 히트맵 칸에 마우스를 올리면 값 표시
+    $('heatCanvas').addEventListener('mousemove', (e) => {
+        if (!heatLayout || !heatData) return;
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        const j = Math.floor((x - heatLayout.labelW) / heatLayout.cellW);
+        const i = Math.floor((y - heatLayout.headH) / heatLayout.cellH);
+        const tip = $('heatTip');
+        if (i < 0 || i > 6 || j < 0 || j > 23 || heatData[i][j] === null) { tip.classList.add('hidden'); return; }
+        tip.textContent = `${DOW[DOW_ORDER[i]]}요일 ${j}~${j + 1}시: 평균 ${fmt(heatData[i][j])} ${UNIT}`;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+        tip.classList.remove('hidden');
+    });
+    $('heatCanvas').addEventListener('mouseleave', () => $('heatTip').classList.add('hidden'));
+    window.addEventListener('resize', () => { clearTimeout(window._heatTimer); window._heatTimer = setTimeout(drawHeatmap, 150); });
+
+    // ----- 3) 계절별 하루 수요 곡선 -----
+    // 하루 곡선의 "봉우리" 찾기: 양옆보다 크고, 평균의 1% 이상 솟은 시간
+    function findPeaks(arr) {
+        const valid = arr.filter(v => v !== null);
+        const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+        const peaks = [];
+        for (let i = 0; i < arr.length; i++) {
+            const v = arr[i];
+            if (v === null) continue;
+            const prev = i > 0 ? arr[i - 1] : -Infinity, next = i < arr.length - 1 ? arr[i + 1] : -Infinity;
+            if (v >= prev && v > next) {
+                // 주변 3시간 안의 가장 낮은 값보다 충분히 높은지
+                const around = arr.slice(Math.max(0, i - 3), Math.min(arr.length, i + 4)).filter(x => x !== null);
+                if (v - Math.min(...around) >= mean * 0.01) peaks.push({ hour: i + 1, v });
+            }
+        }
+        return peaks.sort((a, b) => b.v - a.v);
+    }
+    function renderSeason(recs) {
+        resetChart('season');
+        const present = Object.keys(SEASONS).filter(s => recs.some(r => seasonOf(r.m) === s));
+        const curves = {};
+        present.forEach(s => { curves[s] = hourlyAvg(recs, r => seasonOf(r.m) === s); });
+        charts.season = new Chart($('seasonChart'), {
+            type: 'line',
+            data: {
+                labels: Array.from({ length: 24 }, (_, i) => (i + 1) + '시'),
+                datasets: present.map(s => ({
+                    label: SEASONS[s].label, data: curves[s],
+                    borderColor: SEASONS[s].color, backgroundColor: SEASONS[s].color,
+                    borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, tension: 0.3,
+                })),
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 14, boxHeight: 3 } },
+                    tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmt(c.raw)} ${UNIT}` } },
+                },
+                scales: { x: { ticks: { maxTicksLimit: 12, maxRotation: 0 }, grid: { display: false } }, y: { ticks: yTicks } },
+            },
+        });
+
+        // 해설: 여름은 가장 높은 시간, 겨울은 봉우리가 둘이면 오전/저녁 두 번
+        // 문장 틀: 봉우리가 오전/오후에 비슷한 높이로 두 개면 "두 번 높아집니다", 아니면 "가장 높습니다"
+        const describe = (s) => {
+            const peaks = findPeaks(curves[s]);
+            const am = peaks.find(p => p.hour >= 7 && p.hour <= 13);
+            const pm = peaks.find(p => p.hour >= 15 && p.hour <= 22);
+            if (am && pm && Math.min(am.v, pm.v) / Math.max(am.v, pm.v) > 0.95) {
+                return { head: josa(SEASONS[s].label, '은', '는'),
+                         body: `<strong>${hourText(am.hour)}</strong>와 <strong>${hourText(pm.hour)}</strong>에 두 번 높아`, end: ['지고', '집니다'] };
+            }
+            const vals = curves[s].filter(v => v !== null);
+            const topHour = peaks.length ? peaks[0].hour : curves[s].indexOf(Math.max(...vals)) + 1;
+            return { head: `${SEASONS[s].label} 수요는`, body: `<strong>${hourText(topHour)}</strong>에 가장 높`, end: ['고', '습니다'] };
+        };
+        const targets = ['summer', 'winter'].filter(s => curves[s]);
+        const use = targets.length ? targets : present.slice(0, 2);
+        const parts = use.map(describe);
+        let text = parts.map((p, i) => `${p.head} ${p.body}${p.end[i === parts.length - 1 ? 1 : 0]}`).join(', ') + '.';
+        // 계절 사이 평균 차이
+        const dayAvg = (s) => curves[s] ? curves[s].reduce((a, v) => a + (v || 0), 0) / curves[s].filter(v => v !== null).length : null;
+        const ranks = present.map(s => ({ s, v: dayAvg(s) })).sort((a, b) => b.v - a.v);
+        if (ranks.length >= 2) text += ` 하루 평균은 ${josa(SEASONS[ranks[0].s].label, '이', '가')} 가장 높고, ${josa(SEASONS[ranks[ranks.length - 1].s].label, '이', '가')} 가장 낮습니다.`;
+        setInsight('insightSeason', text);
+    }
+
+    // ----- 4) 월별 평균 수요 -----
+    function renderMonthly(recs) {
+        resetChart('month');
+        const map = new Map();
+        recs.forEach(r => {
+            const k = `${r.y}-${String(r.m).padStart(2, '0')}`;
+            const o = map.get(k) || { sum: 0, n: 0, m: r.m, y: r.y };
+            o.sum += r.v; o.n++; map.set(k, o);
+        });
+        const keys = [...map.keys()].sort();
+        const multiYear = new Set(keys.map(k => k.slice(0, 4))).size > 1;
+        const label = (k) => multiYear ? `${k.slice(2, 4)}.${+k.slice(5)}월` : `${+k.slice(5)}월`;
+        const vals = keys.map(k => map.get(k).sum / map.get(k).n);
+        charts.month = new Chart($('monthChart'), {
+            type: 'bar',
+            data: {
+                labels: keys.map(label),
+                datasets: [{
+                    label: '월평균 수요', data: vals, borderRadius: 6,
+                    backgroundColor: keys.map(k => SEASONS[seasonOf(map.get(k).m)].color),
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` 평균 ${fmt(c.raw)} ${UNIT}` } } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true } },
+                    y: { ticks: yTicks, min: Math.floor(Math.min(...vals) * 0.85 / 1000) * 1000 },
+                },
+            },
+        });
+        const hi = vals.indexOf(Math.max(...vals)), lo = vals.indexOf(Math.min(...vals));
+        const name = (k) => multiYear ? `${k.slice(0, 4)}년 ${+k.slice(5)}월` : `${+k.slice(5)}월`;
+        let text = `월평균 수요는 ${josa(name(keys[hi]), '이', '가')} <strong>${fmt(vals[hi])} ${UNIT}</strong>로 가장 높고, ${josa(name(keys[lo]), '이', '가')} <strong>${fmt(vals[lo])} ${UNIT}</strong>로 가장 낮습니다.`;
+        if (vals[lo] > 0) text += ` 두 달의 차이는 약 ${pct((vals[hi] - vals[lo]) / vals[lo] * 100)}%입니다. 막대 색은 계절(봄/여름/가을/겨울)을 나타내요.`;
+        setInsight('insightMonth', text);
+    }
+
+    function setInsight(id, html) {
+        $(id).innerHTML = `<svg class="ico" aria-hidden="true"><use href="#i-bulb"></use></svg><span>${html}</span>`;
+    }
+
+    // ----- 출처와 데이터 기준일 -----
+    function renderSource() {
+        const last = allRecords[allRecords.length - 1].key;
+        const first = allRecords[0].key;
+        $('sourceBox').innerHTML = `
+            <strong>출처</strong>: ${esc(SOURCE)} &lsquo;${esc(DATASET_NAME)}&rsquo;<br>
+            <strong>데이터 기준일</strong>: ${dateText(last)} (전체 데이터 기간 ${dateText(first)} ~ ${dateText(last)})<br>
+            <strong>불러온 파일</strong>: ${esc(dataInfo.fileName)} (${esc(dataInfo.encoding)}, ${esc(dataInfo.format)})<br>
+            "1시"는 0시~1시, "24시"는 23시~24시 사이의 전력수요입니다. 계절 구분: 봄 3~5월, 여름 6~8월, 가을 9~11월, 겨울 12~2월.`;
+    }
+
+    // ===== 시작 =====
+    loadDefault();
+    </script>
+</body>
+</html>
